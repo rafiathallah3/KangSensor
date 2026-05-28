@@ -10,7 +10,6 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            # Ini yang bikin perintah 'kang-sensor' bisa diketik langsung di terminal
             'kang-sensor=kang_sensor.app:main', 
         ],
     },
