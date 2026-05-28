@@ -1,2 +1,0 @@
-[console_scripts]
-kang-sensor = kang_sensor.app:main
