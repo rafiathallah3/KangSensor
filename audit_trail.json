@@ -1,0 +1,58 @@
+{
+    "scan_metadata": {
+        "total_entities_redacted": 7,
+        "cumulative_risk_score": 90,
+        "scan_duration_ms": 0.85
+    },
+    "events": [
+        {
+            "timestamp": "2026-05-28T20:05:05.029876",
+            "source": "demo/target.jsom",
+            "entity_type": "STRIPE_SECRET_KEY",
+            "token_id": "[REDACTED_STRIPE_SECRET_KEY_1]",
+            "risk_points": 10
+        },
+        {
+            "timestamp": "2026-05-28T20:05:05.030126",
+            "source": "demo/target.jsom",
+            "entity_type": "CLOUDINARY_CREDENTIALS",
+            "token_id": "[REDACTED_CLOUDINARY_CREDENTIALS_2]",
+            "risk_points": 10
+        },
+        {
+            "timestamp": "2026-05-28T20:05:05.030214",
+            "source": "demo/target.jsom",
+            "entity_type": "EMAIL",
+            "token_id": "[REDACTED_EMAIL_3]",
+            "risk_points": 10
+        },
+        {
+            "timestamp": "2026-05-28T20:05:05.030239",
+            "source": "demo/target.jsom",
+            "entity_type": "INDONESIAN_PHONE",
+            "token_id": "[REDACTED_INDONESIAN_PHONE_4]",
+            "risk_points": 10
+        },
+        {
+            "timestamp": "2026-05-28T20:05:05.030414",
+            "source": "demo/target.jsom",
+            "entity_type": "NIK_KTP_DIRECT",
+            "token_id": "[REDACTED_NIK_KTP_DIRECT_5]",
+            "risk_points": 30
+        },
+        {
+            "timestamp": "2026-05-28T20:05:05.030532",
+            "source": "demo/target.jsom",
+            "entity_type": "CREDIT_CARD",
+            "token_id": "[REDACTED_CREDIT_CARD_6]",
+            "risk_points": 10
+        },
+        {
+            "timestamp": "2026-05-28T20:05:05.030596",
+            "source": "demo/target.jsom",
+            "entity_type": "LOCALHOST_URL",
+            "token_id": "[REDACTED_LOCALHOST_URL_7]",
+            "risk_points": 10
+        }
+    ]
+}
