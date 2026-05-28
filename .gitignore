@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Egg info
+*.egg-info/
+dist/
+build/
+
+# Audit log (generated file)
+audit_trail.json
+
+# Demo / test files dengan data sensitif
+demo/
+
+# Environment variables
+.env
