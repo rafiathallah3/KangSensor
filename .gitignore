@@ -15,4 +15,6 @@ audit_trail.json
 demo/
 
 # Environment variables
-.env
+.env/
+env/
+.venv/
