@@ -151,9 +151,13 @@ def run_file_mode(preventer: DataLeakagePreventer, input_file: str, output_file:
         
         # PROMPT INJECTION
         prompt = (
-            "Perbaiki kode/teks berikut. Untuk kode pemrograman, WAJIB letakkan "
-            "seluruh kode hasil perbaikan di dalam blok kode Markdown (```). "
-            "Jangan mengubah atau menghilangkan token [REDACTED_...]:\n\n" + safe_text
+            "Perbaiki HANYA kesalahan sintaksis, eror struktur, atau typo pada teks/kode/konfigurasi berikut. "
+            "WAJIB letakkan seluruh hasil perbaikan di dalam blok kode Markdown (```). "
+            "ATURAN SANGAT KRITIS (JIKA DILANGGAR SISTEM AKAN HANCUR): "
+            "1. DILARANG mengubah nama key/variabel (contoh: jangan ubah 'nama_lengkap' menjadi 'namalengkap'). "
+            "2. DILARANG menciptakan kata sensor buatanmu sendiri (seperti REDACTEDCUSTOMER_NAME atau SENSITIVEDATA_HIDDEN). "
+            "3. COPY-PASTE secara persis dan utuh semua token [REDACTED_...] ke dalam blok kodemu tanpa mengubah satu karakter pun. "
+            "ATURAN OUTPUT: Berikan maksimal satu baris kalimat pengantar saja di luar blok kode:\n\n" + safe_text
         )
         llm_reply = call_llm_api(prompt, provider=provider)
         

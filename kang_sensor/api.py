@@ -1,4 +1,5 @@
 import sys
+import re
 import warnings
 import json
 import urllib.request
@@ -168,16 +169,93 @@ def _execute_http_request(provider_name: str, model_name: str, api_key: str, pro
     except Exception as e:
         raise ConnectionError(f"Network error: {e}")
 
+def _protect_tokens(text: str):
+    """Protect [REDACTED_...] tokens from markdown stripping operations."""
+    mapping = {}
+
+    def replacer(match):
+        token = match.group(0)
+        placeholder = f"__KANG_SENSOR_PROTECTED_TOKEN_{len(mapping)}__"
+        mapping[placeholder] = token
+        return placeholder
+
+    protected = re.sub(r'\[REDACTED_[^\]]+\]', replacer, text)
+    return protected, mapping
+
+
+def _restore_tokens(text: str, mapping: dict) -> str:
+    """Restore protected tokens after markdown stripping."""
+    for placeholder, token in mapping.items():
+        text = text.replace(placeholder, token)
+    return text
+
+
+def strip_markdown(text: str) -> str:
+    """
+    Membersihkan formatting Markdown dari output AI agar tampil rapi di terminal rich.
+    Versi Super Aman: Menggunakan label pengganti TANPA underscore agar tidak dirusak regex.
+    """
+    import re
+    # Ambil token unik saja agar tidak ada duplikasi saat looping
+    tokens = list(set(re.findall(r'\[REDACTED_[^\]]+\]', text)))
+    
+    # Ganti dengan placeholder rapat TANPA underscore
+    temp_text = text
+    for i, token in enumerate(tokens):
+        temp_text = temp_text.replace(token, f"KANGTOKEN{i}SAFE")
+
+    # Bersihkan markdown (Bold, Italic, Code inline)
+    temp_text = re.sub(r'\*{2,3}(.+?)\*{2,3}', r'\1', temp_text, flags=re.DOTALL)
+    temp_text = re.sub(r'\*(.+?)\*', r'\1', temp_text)
+    temp_text = re.sub(r'_{2}(.+?)_{2}', r'\1', temp_text, flags=re.DOTALL)
+    temp_text = re.sub(r'_(.+?)_', r'\1', temp_text)
+    temp_text = re.sub(r'(?<!`)`(?!`)(.*?)(?<!`)`(?!`)', r'\1', temp_text)
+    
+    # Hapus header dan horizontal rules
+    temp_text = re.sub(r'^#{1,6}\s+', '', temp_text, flags=re.MULTILINE)
+    temp_text = re.sub(r'^---+\s*$', '', temp_text, flags=re.MULTILINE)
+    temp_text = re.sub(r'\n{3,}', '\n\n', temp_text)
+
+    # Kembalikan token asli ke tempatnya secara presisi
+    for i, token in enumerate(tokens):
+        temp_text = temp_text.replace(f"KANGTOKEN{i}SAFE", token)
+
+    return temp_text.strip()
+
 def call_llm_api(safe_text: str, provider: str = None) -> str:
     provider_name, model_name, api_key = get_active_provider_config(provider)
-    
-    system_instruction = """Bertindaklah sebagai asisten AI yang cerdas. 
-    ATURAN MUTLAK: Jika terdapat variabel token seperti [REDACTED_...], JANGAN mengubahnya.
-    
-    Teks Pengguna:
-    """
+
+    system_instruction = """Kamu adalah AI Security Analyst profesional dari tim Cyber Defense.
+
+Tugasmu adalah menganalisis teks/payload yang diberikan. Teks ini sudah melalui proses redaksi otomatis,
+sehingga data sensitif telah diganti dengan token placeholder seperti [REDACTED_EMAIL_1], [REDACTED_PASSWORD_VALUE_2], dst.
+
+ATURAN MUTLAK:
+- JANGAN mengubah, menghapus, menerjemahkan, atau memodifikasi karakter di dalam token [REDACTED_...].
+- Tulis ulang token tersebut EXACTLY AS IT IS. Jika ada token [REDACTED_EMAIL_1], tulis persis "[REDACTED_EMAIL_1]".
+- JANGAN gunakan format Markdown yang berlebihan.
+
+TUGASMU — analisis secara terstruktur:
+
+[1] RINGKASAN ANCAMAN
+Jelaskan konteks dari payload ini.
+
+[2] IDENTIFIKASI DATA SENSITIF
+Sebutkan jenis-jenis data sensitif apa saja yang terdeteksi (gunakan token aslinya, contoh: "[REDACTED_STRIPE_SECRET_KEY_1] merupakan kunci rahasia...") dan jelaskan bahayanya.
+
+[3] PENILAIAN RISIKO
+Berikan penilaian: FATAL / HIGH / MEDIUM / LOW / SAFE beserta alasannya.
+
+[4] REKOMENDASI MITIGASI
+Berikan 2-3 langkah konkret pengamanan.
+
+[5] PERBAIKAN KODE/PAYLOAD
+Jika payload berupa kode pemrograman, JSON, atau file konfigurasi, berikan versi perbaikannya di dalam blok kode Markdown
+
+=== PAYLOAD UNTUK DIANALISIS ===
+"""
     final_payload = system_instruction + safe_text
-    
+
     with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
         task = progress.add_task(f"[red][*] Establishing connection to {provider_name.capitalize()} ({model_name})...", total=None)
         try:
@@ -186,16 +264,12 @@ def call_llm_api(safe_text: str, provider: str = None) -> str:
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(final_payload)
                 progress.update(task, completed=100)
-                return response.text
+                # PENTING: Hanya lakukan pembersihan markdown jika teks BUKAN untuk dioverwrite ke file (Bukan mode --ai-fix file)
+                return strip_markdown(response.text) 
             else:
-                reply = _execute_http_request(
-                    provider_name=provider_name,
-                    model_name=model_name,
-                    api_key=api_key,
-                    prompt=final_payload
-                )
+                reply = _execute_http_request(provider_name, model_name, api_key, final_payload)
                 progress.update(task, completed=100)
-                return reply
+                return strip_markdown(reply)
         except Exception as e:
             progress.stop()
             console.print(f"\n[bold red][-] API Connection Failed: {e}[/bold red]")

@@ -11,7 +11,7 @@ SENSITIVE_PATTERNS = {
     "DISCORD_WEBHOOK": re.compile(r'https://discord(?:app)?\.com/api/webhooks/[0-9]{17,19}/([a-zA-Z0-9\-_]{68})', flags=re.IGNORECASE),
     "DISCORD_BOT_TOKEN": re.compile(r'[MNO][a-zA-Z0-9_-]{23,25}\.[a-zA-Z0-9_-]{6}\.[a-zA-Z0-9_-]{27}'),
     "TELEGRAM_BOT_TOKEN": re.compile(r'[0-9]{8,10}:[a-zA-Z0-9_-]{35}'),
-    "STRIPE_SECRET_KEY": re.compile(r'sk_(?:live|test)_[0-9a-zA-Z]{24}'),
+    "STRIPE_SECRET_KEY": re.compile(r'sk_(?:live|test)_[0-9a-zA-Z]{24,}'),
     "SENDGRID_API_KEY": re.compile(r'SG\.[a-zA-Z0-9_\-]{22}\.[a-zA-Z0-9_\-]{43}'),
     "TWILIO_ACCOUNT_SID": re.compile(r'AC[a-zA-Z0-9]{32}'),
     "TWILIO_AUTH_TOKEN": re.compile(r'(?:twilio)[\w\s]*[=:] *([a-z0-9]{32})', flags=re.IGNORECASE),
