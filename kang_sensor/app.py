@@ -8,52 +8,106 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich import box
 
 from kang_sensor.engine import DataLeakagePreventer
-from kang_sensor.api import call_gemini_api
+from kang_sensor.api import call_gemini_api, verify_llm_connection, update_config_api_key
 
 console = Console()
 
-def run_interactive_mode(preventer: DataLeakagePreventer):
-    console.print(Panel("[bold red]KANG-SENSOR DLP v1.0[/bold red]\n[dim]Mode: Interactive Payload Scanner[/dim]", border_style="red", box=box.SQUARE))
-    console.print("\n[bold red][?][/bold red] Enter payload or raw text below.")
-    console.print("[dim](Type 'PROSES' on a new line and press Enter to execute)[/dim]")
-    
-    lines = []
+def run_llm_check():
     while True:
         try:
-            line = input()
-            if line.strip().upper() == 'PROSES':
-                break
-            lines.append(line)
-        except EOFError:
+            with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+                task = progress.add_task("[red][*] Checking LLM configuration and connection...", total=None)
+                verify_llm_connection()
+                progress.update(task, completed=100)
             break
+        except Exception as e:
+            console.print("\n")
+            console.print(Panel(
+                f"[bold red][-] LLM Configuration/Connection Failure[/bold red]\n\n"
+                f"[red]Error Detail:[/red] {e}\n\n"
+                "[yellow]Please check your Gemini API key and model name in [bold]kang_sensor/config.py[/bold] and verify your internet connection.[/yellow]",
+                title="[bold red][ CONNECTION FAILURE ][/bold red]",
+                border_style="red",
+                box=box.SQUARE
+            ))
             
-    user_input = "\n".join(lines)
-    if not user_input.strip():
-        console.print("[bold red][-] Execution aborted: Empty payload.[/bold red]")
-        return
+            console.print("[bold cyan][?][/bold cyan] Would you like to update your Gemini API Key now? (y/n): ", end="")
+            try:
+                choice = input().strip().lower()
+                if choice in ['y', 'yes']:
+                    console.print("[bold cyan][?][/bold cyan] Enter new GEMINI_API_KEY: ", end="")
+                    new_key = input().strip()
+                    if new_key:
+                        update_config_api_key(new_key)
+                        console.print("[bold green][+] Config updated. Retrying connection check...[/bold green]")
+                        continue
+                    else:
+                        console.print("[bold yellow][!] Empty key entered. Aborting...[/bold yellow]")
+                else:
+                    console.print("[bold red][!] Aborted by user.[/bold red]")
+            except (KeyboardInterrupt, EOFError):
+                console.print("\n[bold red][!] Aborted.[/bold red]")
+            
+            sys.exit(1)
 
-    with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
-        task1 = progress.add_task("[red][*] Scanning and redacting local payload...", total=None)
-        safe_text = preventer.anonymize(user_input, source_name="interactive_terminal")
-        progress.update(task1, completed=100)
+def run_interactive_mode(preventer: DataLeakagePreventer):
+    console.print(Panel(
+        "[bold red]KANG-SENSOR DLP v1.0[/bold red]\n"
+        "[dim]Mode: Interactive Multi-Turn Payload Scanner[/dim]\n"
+        "[dim]Press [bold yellow]Ctrl+C[/bold yellow] at any time to exit.[/dim]",
+        border_style="red",
+        box=box.SQUARE
+    ))
 
-    preventer.print_dashboard()
-    preventer.export_audit_log()
-    console.print("[dim][+] Audit log dumped to 'audit_trail.json'[/dim]")
-    
-    console.print("\n[bold red][*] SANITIZED PAYLOAD:[/bold red]")
-    console.print(Panel(safe_text, border_style="dim", box=box.SQUARE))
+    while True:
+        try:
+            console.print(Panel(
+                "[bold cyan]INPUT PAYLOAD[/bold cyan]\n"
+                "[dim]Enter your payload or raw text below. Type 'PROSES' on a new line and press Enter to scan & execute.[/dim]",
+                border_style="cyan",
+                box=box.SQUARE
+            ))
+            
+            lines = []
+            while True:
+                line = input()
+                if line.strip().upper() == 'PROSES':
+                    break
+                lines.append(line)
+                
+            user_input = "\n".join(lines)
+            if not user_input.strip():
+                console.print("[bold yellow][!] Warning: Empty payload. Please try again.[/bold yellow]")
+                continue
 
-    console.print("\n[bold red][*] Initiating secure AI uplink...[/bold red]")
-    llm_reply = call_gemini_api(safe_text)
+            current_preventer = DataLeakagePreventer()
 
-    with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
-        task3 = progress.add_task("[green][*] Restoring original tokens...", total=None)
-        final_output = preventer.deanonymize(llm_reply)
-        progress.update(task3, completed=100)
+            with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+                task1 = progress.add_task("[red][*] Scanning and redacting local payload...", total=None)
+                safe_text = current_preventer.anonymize(user_input, source_name="interactive_terminal")
+                progress.update(task1, completed=100)
 
-    console.print("\n")
-    console.print(Panel(final_output, title="[bold green][ EXECUTION COMPLETE ][/bold green]", border_style="green", box=box.SQUARE))
+            current_preventer.print_dashboard()
+            current_preventer.export_audit_log()
+            console.print("[dim][+] Audit log dumped to 'audit_trail.json'[/dim]")
+            
+            console.print("\n[bold red][*] SANITIZED PAYLOAD:[/bold red]")
+            console.print(Panel(safe_text, border_style="dim", box=box.SQUARE))
+
+            console.print("\n[bold red][*] Initiating secure AI uplink...[/bold red]")
+            llm_reply = call_gemini_api(safe_text)
+
+            with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
+                task3 = progress.add_task("[green][*] Restoring original tokens...", total=None)
+                final_output = current_preventer.deanonymize(llm_reply)
+                progress.update(task3, completed=100)
+
+            console.print("\n")
+            console.print(Panel(final_output, title="[bold green][ EXECUTION COMPLETE ][/bold green]", border_style="green", box=box.SQUARE))
+
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n\n[bold red][!] Interrupted. Exiting Kang-Sensor DLP. Stay safe![/bold red]\n")
+            break
 
 
 def run_file_mode(preventer: DataLeakagePreventer, input_file: str, output_file: str, ai_fix: bool):
@@ -133,9 +187,25 @@ def main():
     parser.add_argument("-o", "--output", help="Output destination (Optional)")
     parser.add_argument("--scan-only", action="store_true", help="Local scan & redact only (File mode)")
     parser.add_argument("--ai-fix", action="store_true", help="Scan, send to AI, and restore in-place (File mode)")
+    parser.add_argument("--set-key", help="Update the Gemini API Key in config.py")
     
     args = parser.parse_args()
     console.clear()
+
+    if args.set_key:
+        try:
+            update_config_api_key(args.set_key)
+            console.print(Panel(
+                f"[bold green][+] API Key successfully updated in config![/bold green]\n\n"
+                f"[dim]New Key: {args.set_key[:6]}...{args.set_key[-4:] if len(args.set_key) > 10 else args.set_key}[/dim]",
+                title="[bold green][ CONFIG UPDATED ][/bold green]",
+                border_style="green",
+                box=box.SQUARE
+            ))
+            sys.exit(0)
+        except Exception as e:
+            console.print(f"[bold red][-] Failed to update config: {e}[/bold red]")
+            sys.exit(1)
 
     preventer = DataLeakagePreventer()
 
@@ -143,11 +213,14 @@ def main():
         if args.scan_only and args.ai_fix:
             console.print("[bold red][-] Conflict: Use either --scan-only OR --ai-fix, not both.[/bold red]")
             sys.exit(1)
+        if args.ai_fix:
+            run_llm_check()
         run_file_mode(preventer, args.input, args.output, ai_fix=args.ai_fix)
     else:
         if args.scan_only or args.ai_fix:
             console.print("[bold red][-] Error: Flags --scan-only and --ai-fix require an input file (-i).[/bold red]")
             sys.exit(1)
+        run_llm_check()
         run_interactive_mode(preventer)
 
 if __name__ == "__main__":
