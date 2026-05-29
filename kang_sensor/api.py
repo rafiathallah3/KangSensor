@@ -272,5 +272,4 @@ Jika payload berupa kode pemrograman, JSON, atau file konfigurasi, berikan versi
                 return strip_markdown(reply)
         except Exception as e:
             progress.stop()
-            console.print(f"\n[bold red][-] API Connection Failed: {e}[/bold red]")
-            sys.exit(1)
+            raise e

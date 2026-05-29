@@ -18,3 +18,4 @@ demo/
 .env/
 env/
 .venv/
+.agent/
