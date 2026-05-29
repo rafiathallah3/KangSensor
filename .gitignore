@@ -18,4 +18,5 @@ demo/
 .env/
 env/
 .venv/
-.agent/
+.agent/"demo_target/" 
+"safe/" 

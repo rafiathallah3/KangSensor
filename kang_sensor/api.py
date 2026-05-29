@@ -250,7 +250,7 @@ Berikan penilaian: FATAL / HIGH / MEDIUM / LOW / SAFE beserta alasannya.
 Berikan 2-3 langkah konkret pengamanan.
 
 [5] PERBAIKAN KODE/PAYLOAD
-Jika payload berupa kode pemrograman, JSON, atau file konfigurasi, berikan versi perbaikannya di dalam blok kode Markdown
+Jika payload berupa kode pemrograman, SEBUTKAN DAN JELASKAN terlebih dahulu secara singkat bagian mana yang typo atau memiliki kesalahan sintaksis. Setelah memberikan penjelasan, berikan versi perbaikannya di dalam blok kode Markdown.
 
 === PAYLOAD UNTUK DIANALISIS ===
 """

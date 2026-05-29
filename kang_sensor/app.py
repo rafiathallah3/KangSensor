@@ -13,6 +13,14 @@ try:
 except ImportError:
     HAS_MSVCRT = False
 
+# --- DEPENDENSI BARU UNTUK FILE BINARY ---
+try:
+    import PyPDF2
+    import docx
+    import openpyxl
+except ImportError:
+    pass
+
 from kang_sensor.engine import DataLeakagePreventer
 from kang_sensor.api import (
     call_llm_api,
@@ -22,6 +30,54 @@ from kang_sensor.api import (
 )
 
 console = Console()
+
+# --- FUNGSI PEMBACA FILE BINARY & TEKS ---
+def extract_text_from_file(filepath: str) -> str:
+    """Mengekstrak teks dari file teks maupun binary (PDF, DOCX, XLSX)."""
+    ext = os.path.splitext(filepath)[1].lower()
+    
+    try:
+        if ext == '.pdf':
+            text = ""
+            with open(filepath, 'rb') as f:
+                reader = PyPDF2.PdfReader(f)
+                for page in reader.pages:
+                    if page.extract_text():
+                        text += page.extract_text() + "\n"
+            return text
+        elif ext == '.docx':
+            doc = docx.Document(filepath)
+            return "\n".join([p.text for p in doc.paragraphs])
+        elif ext == '.xlsx':
+            wb = openpyxl.load_workbook(filepath, data_only=True)
+            text = ""
+            for sheet in wb.worksheets:
+                for row in sheet.values:
+                    text += " ".join([str(v) for v in row if v is not None]) + "\n"
+            return text
+        else:
+            # Fallback untuk file teks, .sql, .py, .json, dll
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.read()
+    except Exception as e:
+        console.print(f"[bold red][-] Failed to read {filepath}: {e}[/bold red]")
+        return ""
+
+# --- FUNGSI FOLDER RECURSIVE SCANNER ---
+def get_target_files(input_path: str) -> list:
+    """Menghasilkan list file jika input berupa folder, atau list 1 file jika input file tunggal."""
+    if os.path.isdir(input_path):
+        file_list = []
+        for root, _, files in os.walk(input_path):
+            # Abaikan direktori sistem dan node_modules
+            if any(ignored in root for ignored in ['.git', 'node_modules', 'venv', '__pycache__']):
+                continue
+            for file in files:
+                file_list.append(os.path.join(root, file))
+        return file_list
+    else:
+        return [input_path]
+
 
 def run_llm_check(provider: str = None):
     while True:
@@ -65,21 +121,18 @@ def run_llm_check(provider: str = None):
             sys.exit(1)
 
 def redraw_menu(prompt: str, input_str: str, filtered_cmds: list, selected_idx: int, menu_height_printed: int) -> int:
-    # 1. Clear previous menu lines
     if menu_height_printed > 0:
         for _ in range(menu_height_printed):
-            sys.stdout.write("\033[B") # Move cursor down
-            sys.stdout.write("\r\033[K") # Clear line
-        sys.stdout.write(f"\033[{menu_height_printed}A") # Move back up
+            sys.stdout.write("\033[B") 
+            sys.stdout.write("\r\033[K") 
+        sys.stdout.write(f"\033[{menu_height_printed}A") 
         sys.stdout.write("\r")
         sys.stdout.flush()
 
-    # 2. Print input line
     sys.stdout.write("\r\033[K")
     console.print(f"[bold red]{prompt}[/bold red]{input_str}", end="")
     sys.stdout.flush()
 
-    # 3. Print autocomplete dropdown
     new_menu_height = 0
     if filtered_cmds and input_str.startswith('/'):
         new_menu_height = len(filtered_cmds)
@@ -90,7 +143,6 @@ def redraw_menu(prompt: str, input_str: str, filtered_cmds: list, selected_idx: 
             else:
                 console.print(f"    [dim]{cmd}[/dim]", end="")
         
-        # Move cursor back up to input line
         sys.stdout.write(f"\033[{new_menu_height}A")
         sys.stdout.write("\r")
         console.print(f"[bold red]{prompt}[/bold red]{input_str}", end="")
@@ -107,11 +159,9 @@ def get_intellisense_input(prompt: str, commands: list) -> str:
     selected_idx = 0
     menu_height_printed = 0
     
-    # Initial draw
     menu_height_printed = redraw_menu(prompt, input_str, [], 0, 0)
     
     while True:
-        # Get filtered commands
         filtered_cmds = []
         if input_str.startswith('/'):
             filtered_cmds = [c for c in commands if c.startswith(input_str.lower())]
@@ -120,7 +170,6 @@ def get_intellisense_input(prompt: str, commands: list) -> str:
         else:
             selected_idx = 0
             
-        # Redraw screen and menu
         menu_height_printed = redraw_menu(prompt, input_str, filtered_cmds, selected_idx, menu_height_printed)
         
         try:
@@ -130,48 +179,42 @@ def get_intellisense_input(prompt: str, commands: list) -> str:
             raise KeyboardInterrupt
             
         if ch in (b'\x00', b'\xe0'):
-            # Special key
             try:
                 ch2 = msvcrt.getch()
             except KeyboardInterrupt:
                 clear_menu_lines(menu_height_printed)
                 raise KeyboardInterrupt
                 
-            if ch2 == b'H': # Up arrow
+            if ch2 == b'H': 
                 if filtered_cmds:
                     selected_idx = (selected_idx - 1) % len(filtered_cmds)
-            elif ch2 == b'P': # Down arrow
+            elif ch2 == b'P': 
                 if filtered_cmds:
                     selected_idx = (selected_idx + 1) % len(filtered_cmds)
             continue
             
         if ch in (b'\r', b'\n'):
-            # Enter
             if filtered_cmds and input_str.startswith('/'):
                 input_str = filtered_cmds[selected_idx]
             clear_menu_lines(menu_height_printed)
-            print() # Advance terminal cursor
+            print() 
             return input_str
             
         elif ch == b'\x08':
-            # Backspace
             if len(input_str) > 0:
                 input_str = input_str[:-1]
                 selected_idx = 0
                 
         elif ch == b'\t':
-            # Tab autocompletes
             if filtered_cmds and input_str.startswith('/'):
                 input_str = filtered_cmds[selected_idx] + " "
                 selected_idx = 0
                 
         elif ch == b'\x03':
-            # Ctrl+C
             clear_menu_lines(menu_height_printed)
             raise KeyboardInterrupt
             
         elif ch == b'\x1a':
-            # Ctrl+Z
             clear_menu_lines(menu_height_printed)
             raise EOFError
             
@@ -209,7 +252,6 @@ def run_interactive_mode(preventer: DataLeakagePreventer, provider: str = None):
     while True:
         try:
             provider_name, model_name, _ = get_active_provider_config(active_provider)
-            # Display premium command line prompt with Intellisense
             line = get_intellisense_input(
                 prompt="kang-sensor > ",
                 commands=['/help', '/provider', '/model', '/status', '/paste', '/clear', '/exit', '/quit']
@@ -218,7 +260,6 @@ def run_interactive_mode(preventer: DataLeakagePreventer, provider: str = None):
             if not line:
                 continue
 
-            # Command Handling
             if line.startswith('/'):
                 cmd_parts = line.split(maxsplit=1)
                 cmd = cmd_parts[0].lower()
@@ -276,13 +317,11 @@ def run_interactive_mode(preventer: DataLeakagePreventer, provider: str = None):
                         console.print("[bold yellow][!] Warning: Empty token entered. Action cancelled.[/bold yellow]")
                         continue
                         
-                    # Update config
                     var_name = f"{chosen_provider.upper()}_API_KEY"
                     update_config_value(var_name, new_token)
                     update_config_value("DEFAULT_PROVIDER", chosen_provider)
                     active_provider = chosen_provider
                     
-                    # Verify connection
                     with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
                         task = progress.add_task(f"[red][*] Establishing connection to {chosen_display}...", total=None)
                         try:
@@ -323,7 +362,6 @@ def run_interactive_mode(preventer: DataLeakagePreventer, provider: str = None):
                         border_style="red",
                         box=box.SQUARE
                     ))
-                    # Test connection
                     with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
                         task = progress.add_task(f"[red][*] Testing connection uplink...", total=None)
                         try:
@@ -361,17 +399,14 @@ def run_interactive_mode(preventer: DataLeakagePreventer, provider: str = None):
                     console.print(f"[bold red][-] Unknown command: {cmd}. Type /help for available commands.[/bold red]")
                     continue
             else:
-                # Normal single-line or backslash continuation input
                 lines = [line]
                 while line.endswith('\\'):
-                    # remove trailing backslash
                     lines[-1] = lines[-1][:-1]
                     console.print("[dim]> [/dim]", end="")
                     line = input()
                     lines.append(line)
                 user_input = "\n".join(lines)
 
-            # Execution logic
             if not user_input.strip():
                 continue
 
@@ -415,11 +450,11 @@ def run_interactive_mode(preventer: DataLeakagePreventer, provider: str = None):
             console.print("\n\n[bold red][!] Interrupted. Exiting Kang-Sensor DLP. Stay safe![/bold red]\n")
             break
 
-
+# --- FUNGSI DUKUNGAN BINARY DAN REKURSIF FILE/FOLDER ---
 def run_file_mode(preventer: DataLeakagePreventer, input_file: str, output_file: str, ai_fix: bool, provider: str = None):
     if not os.path.exists(input_file):
         console.print(f"[bold red][-] Target not found: {input_file}[/bold red]")
-        sys.exit(1)
+        return # Menggunakan return agar tidak mematikan program saat loop banyak file
 
     provider_name, model_name, _ = get_active_provider_config(provider)
     console.print(Panel(
@@ -430,22 +465,28 @@ def run_file_mode(preventer: DataLeakagePreventer, input_file: str, output_file:
         box=box.SQUARE
     ))
     
-    with open(input_file, 'r', encoding='utf-8') as f:
-        user_input = f.read()
+    # 1. Ekstrak Teks dari file Teks maupun Binary
+    user_input = extract_text_from_file(input_file)
+    if not user_input.strip():
+        console.print(f"[bold yellow][!] Ignoring empty or unreadable file: {input_file}[/bold yellow]")
+        return
 
+    # 2. Scanning
     with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
         task1 = progress.add_task(f"[red][*] Deep scanning {input_file}...", total=None)
         safe_text = preventer.anonymize(user_input, source_name=input_file)
         progress.update(task1, completed=100)
 
     preventer.print_dashboard()
-    preventer.export_audit_log()
-    console.print("[dim][+] Audit log dumped to 'audit_trail.json'[/dim]")
 
+    # Cek apakah file ini binary
+    ext = os.path.splitext(input_file)[1].lower()
+    is_binary = ext in ['.pdf', '.docx', '.xlsx']
+
+    # 3. Eksekusi Mode AI-Fix
     if ai_fix:
         console.print("\n[bold red][*] Requesting AI remediation...[/bold red]")
         
-        # PROMPT INJECTION
         prompt = (
             "Perbaiki HANYA kesalahan sintaksis, eror struktur, atau typo pada teks/kode/konfigurasi berikut. "
             "WAJIB letakkan seluruh hasil perbaikan di dalam blok kode Markdown (```). "
@@ -453,49 +494,70 @@ def run_file_mode(preventer: DataLeakagePreventer, input_file: str, output_file:
             "1. DILARANG mengubah nama key/variabel (contoh: jangan ubah 'nama_lengkap' menjadi 'namalengkap'). "
             "2. DILARANG menciptakan kata sensor buatanmu sendiri (seperti REDACTEDCUSTOMER_NAME atau SENSITIVEDATA_HIDDEN). "
             "3. COPY-PASTE secara persis dan utuh semua token [REDACTED_...] ke dalam blok kodemu tanpa mengubah satu karakter pun. "
-            "ATURAN OUTPUT: Berikan maksimal satu baris kalimat pengantar saja di luar blok kode:\n\n" + safe_text
+            "ATURAN OUTPUT: Berikan maksimal 1-2 baris kalimat pengantar di luar blok kode yang MENJELASKAN SECARA SPESIFIK letak typo/error yang kamu temukan dan perbaiki:\n\n" + safe_text
         )
         try:
             llm_reply = call_llm_api(prompt, provider=provider)
         except Exception as e:
             console.print(f"\n[bold red][-] AI Remediation Failed: {e}[/bold red]")
-            sys.exit(1)
+            return
         
-        # 1. DEANONYMIZE UTUH: Mengembalikan token menjadi kredensial asli untuk seluruh teks (termasuk basa-basi AI)
         with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
             task3 = progress.add_task("[green][*] Restoring original tokens...", total=None)
             full_restored_text = preventer.deanonymize(llm_reply)
             progress.update(task3, completed=100)
             
-        # 2. TAMPILAN CLI: Menampilkan output utuh (beserta kalimat pengantar) di terminal
         console.print("\n")
         console.print(Panel(full_restored_text, title="[bold green][ AI REMEDIATION RESPONSE ][/bold green]", border_style="green", box=box.SQUARE))
 
-        # 3. EKSTRAKSI FILE: Membuang kalimat pengantar hanya untuk disimpan ke file
         saved_text = full_restored_text
-        if not input_file.lower().endswith('.txt'):
-            batas_kode = chr(96) + chr(96) + chr(96) # Menghasilkan ```
-            if batas_kode in full_restored_text:
-                potongan = full_restored_text.split(batas_kode)
-                if len(potongan) >= 3:
-                    isi_kode = potongan[1]
-                    garis_baru_pertama = isi_kode.find('\n')
-                    if garis_baru_pertama != -1:
-                        saved_text = isi_kode[garis_baru_pertama+1:].strip() + "\n"
-                    else:
-                        saved_text = isi_kode.strip() + "\n"
+        batas_kode = chr(96) + chr(96) + chr(96) 
+        if batas_kode in full_restored_text:
+            potongan = full_restored_text.split(batas_kode)
+            if len(potongan) >= 3:
+                isi_kode = potongan[1]
+                garis_baru_pertama = isi_kode.find('\n')
+                if garis_baru_pertama != -1:
+                    saved_text = isi_kode[garis_baru_pertama+1:].strip() + "\n"
+                else:
+                    saved_text = isi_kode.strip() + "\n"
         
-        # 4. In-Place Overwrite
-        out_path = output_file if output_file else input_file
-        action_msg = "Target overwritten in-place"
+        # Logika Penyimpanan AI-Fix
+        if is_binary:
+            # Binary tidak ditimpa, masukkan hasil AI-Fix ke folder 'safe'
+            safe_base_dir = "safe"
+            rel_path = os.path.relpath(input_file)
+            target_dir = os.path.join(safe_base_dir, os.path.dirname(rel_path))
+            os.makedirs(target_dir, exist_ok=True)
+            
+            out_path = output_file if output_file else os.path.join(target_dir, f"{os.path.basename(input_file)}_fixed.txt")
+            action_msg = "Binary extracted & AI Fixed output saved to"
+        else:
+            # File Teks biasa tetap ditimpa di tempat aslinya (in-place overwrite)
+            out_path = output_file if output_file else input_file
+            action_msg = "Target overwritten in-place"
 
+    # 4. Eksekusi Mode Scan-Only (Simpan ke folder 'safe')
     else:
-        # Mode Scan-Only tetap membuat file kloningan agar file aslinya tidak rusak/hilang data
         saved_text = safe_text
-        out_path = output_file if output_file else f"safe_{os.path.basename(input_file)}"
-        action_msg = "Output saved to"
+        
+        # Buat direktori 'safe' dan pertahankan struktur folder asli
+        safe_base_dir = "safe"
+        rel_path = os.path.relpath(input_file)
+        target_dir = os.path.join(safe_base_dir, os.path.dirname(rel_path))
+        
+        # Bikin foldernya jika belum ada
+        os.makedirs(target_dir, exist_ok=True)
+        
+        base_name = os.path.basename(input_file)
+        if is_binary:
+            out_path = output_file if output_file else os.path.join(target_dir, f"{base_name}.txt")
+        else:
+            out_path = output_file if output_file else os.path.join(target_dir, base_name)
+            
+        action_msg = "Redacted output saved to"
 
-    # Menyimpan teks (yang sudah dibersihkan basa-basinya) ke file
+    # Tulis hasil akhirnya
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write(saved_text)
 
@@ -504,14 +566,14 @@ def run_file_mode(preventer: DataLeakagePreventer, input_file: str, output_file:
 
 def main():
     parser = argparse.ArgumentParser(description="Kang-Sensor: Tactical Data Leakage Prevention (DLP) Tool.")
-    parser.add_argument("-i", "--input", help="Target file to scan (Optional)")
+    parser.add_argument("-i", "--input", help="Target file or directory folder to scan (Optional)")
     parser.add_argument("-o", "--output", help="Output destination (Optional)")
-    parser.add_argument("--scan-only", action="store_true", help="Local scan & redact only (File mode)")
-    parser.add_argument("--ai-fix", action="store_true", help="Scan, send to AI, and restore in-place (File mode)")
-    parser.add_argument("-p", "--provider", help="Select LLM provider for this run (gemini, openai, claude, openrouter)")
-    parser.add_argument("--set-provider", help="Set default LLM provider permanently (gemini, openai, claude, openrouter)")
-    parser.add_argument("--set-key", help="Update API Key for the selected provider (or default provider if not specified)")
-    parser.add_argument("--set-model", help="Update default model name for the selected provider (or default provider if not specified)")
+    parser.add_argument("--scan-only", action="store_true", help="Local scan & redact only (File/Folder mode)")
+    parser.add_argument("--ai-fix", action="store_true", help="Scan, send to AI, and restore in-place (File/Folder mode)")
+    parser.add_argument("-p", "--provider", help="Select LLM provider for this run")
+    parser.add_argument("--set-provider", help="Set default LLM provider permanently")
+    parser.add_argument("--set-key", help="Update API Key")
+    parser.add_argument("--set-model", help="Update default model")
     
     args = parser.parse_args()
     console.clear()
@@ -537,7 +599,6 @@ def main():
             console.print(f"[bold red][-] Failed to update provider config: {e}[/bold red]")
             sys.exit(1)
 
-    # Resolve target provider for actions
     target_provider = args.provider if args.provider else None
 
     # 2. Handle --set-key
@@ -582,14 +643,29 @@ def main():
         if args.scan_only and args.ai_fix:
             console.print("[bold red][-] Conflict: Use either --scan-only OR --ai-fix, not both.[/bold red]")
             sys.exit(1)
+        
         if args.ai_fix:
             run_llm_check(provider=target_provider)
-        run_file_mode(preventer, args.input, args.output, ai_fix=args.ai_fix, provider=target_provider)
+
+        # Cek apakah itu folder atau file tunggal
+        target_files = get_target_files(args.input)
+        
+        if len(target_files) > 1:
+            console.print(f"[bold cyan][*] Scanning recursively: {len(target_files)} target file(s) found in directory.[/bold cyan]\n")
+        
+        # Looping ke semua file (jika mode direktori)
+        for filepath in target_files:
+            run_file_mode(preventer, filepath, args.output, ai_fix=args.ai_fix, provider=target_provider)
+            console.print("-" * 60)
+
+        preventer.export_audit_log()
+        console.print("[dim][+] Global audit log dumped to 'audit_trail.json'[/dim]")
+
     else:
         if args.scan_only or args.ai_fix:
-            console.print("[bold red][-] Error: Flags --scan-only and --ai-fix require an input file (-i).[/bold red]")
+            console.print("[bold red][-] Error: Flags --scan-only and --ai-fix require an input file or folder (-i).[/bold red]")
             sys.exit(1)
-        # Check connection status at interactive startup but do not fail hard
+        
         provider_name, _, _ = get_active_provider_config(target_provider)
         try:
             with Progress(SpinnerColumn("line"), TextColumn("[progress.description]{task.description}"), console=console) as progress:
